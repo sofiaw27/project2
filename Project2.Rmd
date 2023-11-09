@@ -1,0 +1,242 @@
+---
+title: "Does every Taylor Swift song sound the same?"
+author: "Sofia White"
+output:
+  html_document: default
+  pdf_document: default
+---
+
+```{r global_options, echo=FALSE, message=FALSE}
+knitr::opts_chunk$set(fig.height=5, fig.width=7, warning=FALSE, tidy=TRUE, tidy.opts=list(width.cutoff=60))
+
+```
+
+```{r echo=FALSE, message=FALSE}
+#load packages
+library(tidyverse)
+library(ggplot2)
+library(lubridate)
+library(kableExtra)
+library(taylor)
+library(forcats)
+library(stringr)
+library(magrittr)
+library(fmsb)
+```
+
+# **Introduction**
+
+The data analyzed in this report includes musical qualities of Taylor Swift songs given by Spotify API and lyrics given by Genius. This includes the danceability and energy of each song, both on a scale from 0-100, along with tempo and duration in minutes. As Taylor Swift has been growing in the media and in pop culture, there has been a claim that "all her songs sound the same". Each of her songs are included in this data and when placed against the musical characteristics we should be able to prove the diversity in her music along with which of her albums hold certain qualities. The original data has many more variables and can be found [here](https://github.com/adashofdata/taylor_swift_data/tree/main/Taylor_Swift_Spotify) ![Taylor Swift Eras](taylor.jpeg)
+
+Photo Citation: Teen Vogue, "Taylor Swift The Eras Tour: Dates, Ticket Prices, Openers, On-Sale Info, and Everything We Know So Far", 2022
+
+# **Data Preparation**
+
+I found this data through Github and was able to download the raw csv file called "taylor_swift_spotify_data.csv". I first read the file and saw there were multiple variables that had 0-1 scales and I thought viewing these variables from a 0-100 scale would be more comprehendible for the reader. I, then, created a new variable for duration of the song measured in minutes, as opposed to milliseconds, rounded that number to two decimal places for simplicity and discarded the previous variable of duration in milliseconds. I wanted to be able to sort the graphs from oldest to newest album so I installed the "taylor" package that includes a data frame with then album release dates and lyrics for each song and merged the two together. I then had to selected my variables of interest. I didn't have many coding obstacles with the data since the file was provided by another profile on Github. I ran into some merging issues because some track names didn't match so it brought down the number of observations I had. The data now only includes songs without any other featured artists. I was also lucky enough to not have any NA values with my total number of observations being 133.
+
+# **Variable Descriptions**
+
+```{r echo=FALSE, message=FALSE}
+#read csv as tibble
+ts <- read_csv("taylor_swift_spotify_data.csv")
+
+#cleaning the data
+taylor <- ts|>
+  mutate(Duration_min = Duration_ms/60000)|>
+  mutate(Duration_min = round(Duration_min, digits = 2))|>
+  #changing variables to be 0-100 instead of 0-1 scales
+  mutate(Danceability = Danceability * 100)|>
+  mutate(Energy = Energy *100)|>
+  mutate(Valence = Valence*100)|>
+  mutate(Acousticness = Acousticness*100)|>
+  mutate(Speechiness = Speechiness*100)|>
+  mutate(Instrumentalness = Instrumentalness*100)
+
+#changing variable name so we can merge
+taylor <- taylor|>
+  rename(track_name = `Song Name`)
+
+#merging from taylor package to get release date for songs, and lyrics
+taylor <- merge(taylor, taylor_all_songs, by = "track_name")
+taylor <- taylor|>
+  select(Album, track_name, Danceability, Energy,Valence,Tempo,Duration_min,album_release, lyrics, Acousticness, Speechiness, Instrumentalness)|>
+  rename(Song = track_name)|>
+  arrange(album_release)|>
+  mutate(album_release = ymd(album_release))|> #parsing album release to be a date variable
+  mutate(lyrics = map_chr(lyrics, ~ paste(.x, collapse = ", "))) #changing lyric variable from list column
+
+# Categorize songs based on whether they contain "love"
+taylor <- taylor %>%
+  mutate(contains_love = ifelse(str_detect(lyrics, "(?i)love"), "Contains 'Love'", "Doesn't Contain 'Love'"))|>
+  mutate(Era = case_when( #new variable for genre of album song is in
+  Album %in% c("Taylor Swift", "Fearless", "Speak Now") ~ "10s",
+    Album %in% c("Red", "1989", "reputation", "Lover") ~ "20s",
+    Album %in% c("folklore", "evermore", "Midnights") ~ "30s",
+    TRUE ~ "Unknown"  # Handle other cases if needed
+  ))
+
+
+
+```
+
+```{r echo=F, message=FALSE}
+#new tibble to create table
+variable_info <- data.frame(Name = c("Album", "Song", "Danceability", "Energy",
+                                     "Valence", "Tempo", "Duration_min", "album_release", "lyrics",
+                                     "contains_love", "Era", "Acousticness", "Intrumentalness",
+                                     "Speechiness"),
+                            Type = c("Character", "Character", "Double", "Double", "Double",
+                                     "Double", "Double", "Date", "Character", "Character", "Character",
+                                     "Double", "Double", "Double"),
+                            Description = c("Album name for which the song belongs to",
+                                            "Title of the song",
+                                            "How suitable a track is for dancing. 0 =
+                                            least danceable and 100 = most danceable",
+                                            "Perceptual measure of intensity and activity. 0 =
+                                            least energy, 100 = most energy.",
+                                            " Musical positiveness conveyed by the track. 0 =
+                                            low valence (e.g., sad, depressed, angry), 100 =
+                                            high valence (e.g., happy, cheerful, euphoric).",
+                                            " Estimated tempo of the track in beats per 
+                                            minute (BPM)",
+                                            "Duration of the track in minutes.",
+                                            "Date the album for which the song belongs to
+                                            released",
+                                            "Full lyrics to each song",
+                                            "Categorizing each song, whether the song lyrics contain the
+                                            word 'love' or not",
+                                            "Taylor's age by 10 when she wrote the album, (10s,
+                                            20s, 30s)", 
+                                            " Confidence that the track is acoustic. 0 = low
+                                            confidence, 100 = high confidence.",
+                                            " Confidence that the track is an instrumental track (i.e.,
+                                            no vocals). 0.0 = low confidence, 1.0 = high confidence.",
+                                            "The presence of spoken words in a track. Values above 66
+                                            indicate that the track is probably made entirely of spoken
+                                            words. Values between 33 and 66 indicate
+                                            both music and speech. Values less than 33 indicate the track
+                                            is probably music or other non-speech tracks."
+                                            ))
+#table for variable descriptions
+variable_info |>
+  kable(format = "html", caption = "Variable Information Table") |>
+  kable_styling(bootstrap_options = "striped", full_width = FALSE) |>
+    row_spec(0, bold = T)|>
+  column_spec(1, bold = T, border_right = T) |>
+  column_spec(2, bold = F, border_right = T)|>
+  kable_classic(full_width = TRUE, html_font = "Cambria")
+  
+  
+```
+
+# **Univariate Analyses**
+
+Choose at least 4 of your variables and create univariate graphs to display them. Provide a brief description of the distribution, including more than one relevant descriptive statistic, to go along with each graph.
+
+```{r echo=FALSE, message=FALSE}
+ggplot(data = taylor) + geom_boxplot(aes(x = Valence), fill = '#81A757') + labs(title = "Boxplot of Valence (Sad to Happy)")
+```
+
+The above graph displays the distribution of all solo Taylor Swift songs on a scale from saddest sounding to happiest sounding. The middle 50% are in green with the median being `r round(median(taylor$Valence),2)`. We can see most of her songs tend to sound more sad rather than happy. The one outlier we see to the right is "Shake It Off" with a valence of `r max(taylor$Valence)`. She carries a wide range in her music, producing songs of both extreme happiness and sadness with her saddest sounding song being "Maroon" with a valence of `r min(taylor$Valence)`.
+
+```{r echo=FALSE, message=FALSE}
+ggplot(data = taylor) + geom_density(aes(x = Tempo), fill = 'maroon')+ theme_classic()+ labs(title = "Distribution of Tempo (Beats Per Min)")
+```
+
+From this distribution we can see the wide range of tempo that Taylor Swift carries in her music from `r round(min(taylor$tempo),2)`BPM to `r round(max(taylor$tempo),2)`BPM. With no apparent pattern we can't assume she leans more to one speed for her music. According to MasterClass, today's most popular songs are written in a tempo range from 100 to 140 BPM. Taylor's music surpasses this range significantly. However, her average tempo of `r round(mean(taylor$Tempo))` falls well in the middle of the tempo range of today's most popular songs.
+
+```{r echo=FALSE, message=FALSE}
+ggplot(data = taylor) + geom_histogram(aes(x = Duration_min), fill = '#1BAEC6')+ theme_classic()+ labs(title = "Distribution of Song Duration", x = "Duration in minutes")
+```
+
+The distribution of the duration of her songs in minutes is shown with a range of `r max(taylor$Duration_min)` to `r min(taylor$Duration_min)`. Most of the data lies in the area from 3 to 4 minutes and on average her songs last about `r round(mean(taylor$Duration_min),2)` minutes. There are a couple of outliers the lie beyond the 6 minute mark. To listen to every solo Taylor Swift song it would take `r round((sum(taylor$Duration_min)/60),2)` hours.
+
+```{r echo=FALSE, message=FALSE}
+ggplot(data = taylor) + geom_bar(aes(x = contains_love) , fill = "hotpink") + theme_classic() + labs(title = "How many Taylor Swift songs say `love`?", x = " ")
+```
+
+A common conception of Taylor Swift's music is that "all she writes about is love". I've taken every solo song and divided them into two categories by the condition of whether the song contains the word "Love" or not. `r round(((73/133)*100),2)`% of her songs include the word "Love" in the lyrics leaving `r round(((60/133)*100),2)`% that do not. This does not necessarily mean that those songs are about romantic love or heartbreak. Although a slight majority of her songs contain "love", we can say that not all of her songs do.
+
+# **Multivariate Analyses**
+
+```{r echo=F, message=FALSE}
+#colors that correspond to albums
+custom_colors <- c("cyan","#D37F55","gold","darkgrey","hotpink","navy","red","black","purple","#81A757")
+taylor |>
+  group_by(Album) |>
+  mutate(Mean_energy = mean(Energy)) |>
+  ungroup() |>
+  ggplot(aes(x = Mean_energy, y = reorder(Album, album_release))) +
+  geom_point(aes(color = Album), size = 3) + labs(title = "Average Energy levels of all Albums", x = "Mean Energy Level", y = "Album Name") + scale_color_manual(values = custom_colors)
+
+```
+
+The average energy levels of each of Taylor's albums are shown above, sorted from least recent at the bottom with her debut album "Taylor Swift" to her newest album "Midnights". Across her discography there is a wide range from the most energetic album "1989" with a average energy level of 69.9 and least energetic album "Midnights" with an average energy level of 41.8. The graph shows as she matures in her music her sound changes with her and as she ages her average energy level decreases, creating a linear shape. If we look at her 5 most recent albums, at the top of the y-axis, compared to her least recent 5, we can see that the newer albums are much more spread out whereas her older albums are more bunched together. This tells us that as she has aged Taylor has changed her sound more drastically.
+
+```{r echo=FALSE, message=FALSE}
+lover <- taylor|>
+  filter(Album == "Lover")
+ggplot(data = lover) + geom_point(aes(x= Danceability, y = Song, color = Album), size = 3) + labs(title = "Lover songs danceability")
+```
+
+The last graph was able to show us the diversity of her albums. This plot now shows us one specific album "Lover" and the danceability of each song in the album. Out of all Taylor Swift's songs the most danceable and least danceable songs, according to Spotify API, reside in the same album. The song "The Archer" is the least danceable with a score of `r min(taylor$Danceability)` and the song "I think He Knows" is the most danceable with a score of `r max(taylor$Danceability)`. This graph shows that not only is there diversity and variety across the different albums, but within the albums Taylor Swift's songs prove to hold distinct qualities and in terms of danceability, "Lover" is the most diverse.
+
+```{r echo=FALSE, message=FALSE}
+ggplot(data = taylor) + geom_point(aes(x = Valence, y = Danceability, color = Era), alpha = 0.5) + labs(title = "Danceability and Valence by Era") 
+                                
+```
+
+A scatter plot is displayed with the relation between Danceability and Valence sorted by Era. Above we see a weak positive correlation with a correlation of `r cor(taylor$Valence, taylor$Danceability)`. It's easy to assume the happier the song the more danceable it is but the songs in the valence range of 0-25 have a large danceability range. Although, we do see the top happiest songs having a danceability score of 60 or above. In the graph we can also see the songs highlighted in different colors by which decade of life Taylor was in. There is no obvious pattern regarding her age and how it compares to valence and danceability. In each decade we can see large ranges in both axis. If her songs by decade were of similar sound we would be able to see somewhat distinct separation between the colors.
+
+```{r echo=FALSE, message=FALSE}
+#the max and min of each variable to show on the plot
+#new variable for radar chart
+
+taylor_web <- taylor|>
+  group_by(Era)|>
+  summarise(across(c(Danceability, Acousticness, Energy, Speechiness, Instrumentalness), sd))|>
+  add_row(Era = c("max", "min"), Danceability = c(30, 0), Acousticness= c(30, 0), Energy= c(30, 0), Instrumentalness = c(10, 0), Speechiness = c(10, 0), .before = 1)
+  
+
+  
+# Color vector
+colors_border=c( rgb(0.2,0.5,0.5,0.9), rgb(0.8,0.2,0.5,0.9) , rgb(0.7,0.5,0.1,0.9) )
+
+# plot with default options:
+radarchart( taylor_web|> select(-Era) , axistype=1 , 
+    #custom polygon
+    pcol=colors_border , plwd=4 , plty=1,
+    #custom the grid
+    cglcol="grey", cglty=1, axislabcol="grey", cglwd=0.8,
+    #custom labels
+    vlcex=0.8
+    )
+ 
+# Add a legend using the legend function
+legend(x=1, y=0.3, legend = c("10s", "20s", "30s"), bty = "n", pch=20 , col=colors_border , text.col = "black", cex=1, pt.cex=3, title = "Era")
+
+```
+
+In order to see how Taylor has grown her variance over time we can use a radar chart as shown above. 5 numeric variables of musicality are used to create the points of the pentagon including danceability, intrumentalness, acousticness, energy, and speechiness. These variables have set ranges best suited for each respectively and the standard deviations are displayed for each Era, or decade of Taylor Swift's life. A larger standard deviation implies that the range for that variable is larger. In terms of the chart above, the larger the colored polygon, the more variety for that decade. For example, intrumentalness has a large gap between 20s and 30s eras, peaking in the 30s with a SD of 8.69. This shows that the songs written by Taylor in her 30's spans a much wider range in instrumentalness than in her previous two decades. We see this pattern in speechiness as well. She grew her variance much more in her 20s and stayed consistent with that speechiness range while creating music in her 30s with a SD of 7.09. However, there are variables with little change in standard deviations over time like, energy and danceability. This does not mean that those variables do not change over time but that her variety stays consistent through each decade. Overall, we see her teens era having the smallest pentagon, then growth her 20s era pentagon and finally in her 30s we see the largest of the three. This implies that each decade of her life she is expanding her repertoire and creativity when it comes to musical qualities.
+
+# **Reproducability**
+
+To ensure reproducability, I have included all the necessary packages in a chunk at the very beginning and I also did not set the photo to be drawn from a specific directory. As long as the image and the data sets are in the same directory for the user, any person should be able to reproduce this report. I have also checked this with my peers to ensure that the code runs on their devices as well.
+
+# **Choice Elements**
+
+In my report I used many in-line codes in the analyses of the graphs to print numerical statistic descriptors for the graphs. Using the "taylor" R package, I merged my original csv with the data frames built in the package in order to have access to variables like the lyrics for each songs and the release dates for the songs. I then parsed the album date so I could then order the songs from oldest to newest. With the lyric variable I used an if/else statement and the str_detect() function to create a new variable based on whether the song contained the word 'love' print different statements based on the condition. Another variable I added to the data is what decade of her life she was in when she released the song and I called this variable "Era". I coded many of these elements at the very beginning when defining my final data I would be using for the table and graphs.
+
+# **Conclusion**
+
+Overall, we saw great variety among many variables with a large range across Taylor Swift's discography. As a Taylor Swift fan, I expected this outcome but for readers who are not as well versed in Taylor's music it may be surprising how different her songs and albums are from each other. We saw that Taylor has variety across her albums as well as within them. The radar chart then showed many other musical variables that argue the fact that she has not only changed her music but grown in variety over time. Looking away from the musical aspects, we saw that not all her songs contain the word 'love' as many might think. So, with the graphs based on the data I think it's safe to say that not every Taylor Swift song sounds the same.
+
+# **References**
+
+adashofdata. (n.d.). taylor_swift_data. GitHub. <https://github.com/adashofdata/taylor_swift_data/tree/main/Taylor_Swift_Spotify>
+
+Holtz, Y. (2023). Radar chart with several individuals. -- the R Graph Gallery. <https://r-graph-gallery.com/143-spider-chart-with-saveral-individuals.html>
+
+Thompson, W. J. (2023, March 8). taylor: Lyrics and Song Data for Taylor Swift's Discography. <https://cran.r-project.org/web/packages/taylor/taylor.pdf>
+
+Vatsa, S. (2018, October 4). TayloR. Medium. [https://medium.com/\@simranvatsa5/taylor-f656e2a09cc3](https://medium.com/@simranvatsa5/taylor-f656e2a09cc3){.uri}
